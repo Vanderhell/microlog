@@ -1,0 +1,52 @@
+# Build artifacts
+build/
+dist/
+out/
+bin/
+obj/
+Debug/
+Release/
+
+# Compiler outputs
+*.o
+*.obj
+*.lo
+*.a
+*.lib
+*.so
+*.so.*
+*.dll
+*.dylib
+*.exe
+*.exp
+*.pdb
+*.ilk
+*.map
+
+# Test binaries and coverage
+test_all
+*.gcda
+*.gcno
+*.gcov
+coverage/
+
+# Tooling
+compile_commands.json
+.cache/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.user
+*.suo
+*.VC.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.temp
+git.txt
