@@ -1,126 +1,52 @@
 # Porting Guide
 
-microlog needs `mlog.h`, `mlog.c`, and a C99 compiler with the C library
-facilities used by the implementation: `vsnprintf`, `snprintf`, `memcpy`,
-`memset`, and `strlen`.
+microlog requires `mlog.h`, `mlog.c`, a C99 compiler, and the C library facilities used by the implementation: `vsnprintf`, `snprintf`, `memcpy`, `memset`, and `strlen`.
 
----
+## Checklist
 
-## Platform backends
+1. Pick ABI-affecting config values and keep them identical across the library and consumers.
+2. Implement one or more synchronous backend callbacks.
+3. Decide whether timestamps are enabled and provide a `uint32_t` clock if needed.
+4. Add external locking if multiple threads or tasks can access the same logger.
+5. Do not retain callback buffer pointers after the callback returns.
 
-### STM32 HAL (UART)
+## UART Example
 
 ```c
-static void uart_write(const char *buf, uint16_t len,
-                        mlog_level_t level, void *ctx) {
-    (void)level; (void)ctx;
+static void uart_write(const char *buf, uint16_t len, mlog_level_t level, void *ctx)
+{
+    (void)level;
+    (void)ctx;
     HAL_UART_Transmit(&huart2, (uint8_t *)buf, len, 100);
 }
-
-void logging_init(void) {
-    mlog_set_clock(NULL, HAL_GetTick);
-    mlog_backend_t be = { .write = uart_write, .level = MLOG_DEBUG, .color = false };
-    mlog_add_backend(NULL, &be);
-}
 ```
 
-### ESP-IDF (uses ESP_LOG internally, but microlog gives you control)
-
-```c
-static void esp_write(const char *buf, uint16_t len,
-                       mlog_level_t level, void *ctx) {
-    (void)level; (void)ctx;
-    uart_write_bytes(UART_NUM_0, buf, len);
-}
-
-static uint32_t esp_clock(void) {
-    return (uint32_t)(esp_timer_get_time() / 1000);
-}
-```
-
-### Segger RTT (J-Link debug probe)
-
-```c
-#include "SEGGER_RTT.h"
-
-static void rtt_write(const char *buf, uint16_t len,
-                       mlog_level_t level, void *ctx) {
-    (void)level; (void)ctx;
-    SEGGER_RTT_Write(0, buf, len);
-}
-
-mlog_backend_t rtt = { .write = rtt_write, .level = MLOG_TRACE, .color = true };
-```
-
-### Ring buffer (volatile diagnostics)
+## Volatile Ring Buffer Example
 
 ```c
 #define LOG_RING_SIZE 2048
 static char log_ring[LOG_RING_SIZE];
-static uint16_t ring_head = 0;
+static uint16_t ring_head;
 
-static void ring_write(const char *buf, uint16_t len,
-                        mlog_level_t level, void *ctx) {
-    (void)level; (void)ctx;
-    for (uint16_t i = 0; i < len; i++) {
+static void ring_write(const char *buf, uint16_t len, mlog_level_t level, void *ctx)
+{
+    (void)level;
+    (void)ctx;
+    for (uint16_t i = 0; i < len; ++i) {
         log_ring[ring_head] = buf[i];
-        ring_head = (ring_head + 1) % LOG_RING_SIZE;
+        ring_head = (uint16_t)((ring_head + 1u) % LOG_RING_SIZE);
     }
 }
-
-/* Errors only — for crash analysis */
-mlog_backend_t ring = { .write = ring_write, .level = MLOG_ERROR, .color = false };
 ```
 
-### Linux / POSIX (stderr)
+This is volatile in-memory capture only. It does not imply reset-safe or power-loss-safe persistence.
 
-```c
-#include <stdio.h>
-
-static void stderr_write(const char *buf, uint16_t len,
-                          mlog_level_t level, void *ctx) {
-    (void)level; (void)ctx;
-    fwrite(buf, 1, len, stderr);
-}
-```
-
-### Arduino
-
-```cpp
-extern "C" {
-    #include "mlog.h"
-}
-
-static void serial_write(const char *buf, uint16_t len,
-                          mlog_level_t level, void *ctx) {
-    (void)level; (void)ctx;
-    Serial.write((const uint8_t *)buf, len);
-}
-
-static uint32_t arduino_clock(void) { return millis(); }
-```
-
----
-
-## CMake integration
+## CMake Integration
 
 ```cmake
-add_library(microlog STATIC lib/microlog/src/mlog.c)
-target_include_directories(microlog PUBLIC lib/microlog/include)
-
-# Production: strip TRACE/DEBUG, no color
-target_compile_definitions(microlog PUBLIC
-    MLOG_LEVEL_MIN=2
-    MLOG_ENABLE_COLOR=0
-)
+find_package(microlog CONFIG REQUIRED)
+add_executable(app main.c)
+target_link_libraries(app PRIVATE microlog::microlog)
 ```
 
----
-
-## Checklist
-
-1. **C99 + vsnprintf?** → good to go.
-2. **Write a backend callback** → UART, RTT, ring buffer, file, etc.
-3. **Provide clock** → HAL_GetTick, millis(), esp_timer, or NULL.
-4. **Production build** → set `MLOG_LEVEL_MIN=2` or higher.
-5. **Multiple threads?** → protect with mutex or use lock-free backend.
+ABI-affecting definitions are exported publicly through the package target. Consumers must use the same values as the compiled library.

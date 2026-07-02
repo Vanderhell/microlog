@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Documentation
+
+- Added cookbook, troubleshooting, verification, API, design, porting, contributing, and security documentation updates.
+
 ## [1.0.0] — 2026-03-20
 
 ### Added

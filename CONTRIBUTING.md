@@ -1,10 +1,28 @@
 # Contributing to microlog
 
-In scope: bug fixes, documentation, test coverage, platform backends, performance.
-Out of scope: dynamic allocation, async logging, external dependencies, log rotation.
+microlog is a C99 runtime library with zero dynamic allocation and no third-party runtime dependencies.
 
-1. Open an issue first.
-2. Fork, branch (`fix/` or `feat/`), write tests, follow style (C99, `mlog_` prefix).
-3. Submit PR. All tests must pass with `-Wall -Wextra -Wpedantic -Werror`.
+## Ground Rules
+
+- Do not weaken tests.
+- Keep the runtime implementation C99.
+- Do not add internal threads, async flushing, deferred logging, log rotation, or persistence guarantees.
+- Do not add RTOS dependencies or third-party runtime dependencies.
+- Preserve the documented callback ownership and truncation rules.
+- Do not create tags or releases unless explicitly requested.
+
+## Expected Workflow
+
+1. Start with a focused issue or defect description.
+2. Add or strengthen tests before broad implementation changes.
+3. Keep public ABI changes deliberate and documented.
+4. Ensure producer and consumer configuration remains compatible.
+5. Update docs when behavior or constraints change.
+
+## Local Checks
+
+- `make -C tests`
+- `make -C tests compile-checks`
+- `cmake -S . -B build -DMICROLOG_BUILD_TESTS=ON`
 
 By contributing, you agree to the MIT License.

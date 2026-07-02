@@ -1,180 +1,157 @@
 # API Reference
 
-> **Header:** `#include "mlog.h"`
->
-> **Version:** 1.0.0
+Header: `#include "mlog.h"`
 
----
+## Configuration Macros
 
-## Log levels
+| Macro | Default | Valid Range | Notes |
+|---|---:|---|---|
+| `MLOG_MAX_BACKENDS` | `3` | `1..255` | Must match producer and consumer ABI |
+| `MLOG_BUF_SIZE` | `128` | `>= 2` | Stack buffer for formatted message text |
+| `MLOG_LEVEL_MIN` | `0` | `0..5` | Compile-time stripping threshold |
+| `MLOG_ENABLE_COLOR` | `1` | `0` or `1` | Keeps ABI field even when disabled |
+| `MLOG_ENABLE_TIMESTAMP` | `1` | `0` or `1` | Controls timestamp formatting code |
 
-| Level | Value | Char | Color | Use |
-|-------|-------|------|-------|-----|
-| `MLOG_TRACE` | 0 | T | gray | Hot path details |
-| `MLOG_DEBUG` | 1 | D | cyan | Development debugging |
-| `MLOG_INFO` | 2 | I | green | Normal events |
-| `MLOG_WARN` | 3 | W | yellow | Unexpected but handled |
-| `MLOG_ERROR` | 4 | E | red | Failures needing attention |
-| `MLOG_NONE` | 5 | - | — | Disable logging (filter only) |
+Invalid values intentionally fail compilation with `#error`.
 
-## Output format
+## Levels
 
+| Symbol | Value | Meaning |
+|---|---:|---|
+| `MLOG_TRACE` | `0` | Verbose tracing |
+| `MLOG_DEBUG` | `1` | Debugging |
+| `MLOG_INFO` | `2` | Normal events |
+| `MLOG_WARN` | `3` | Handled problems |
+| `MLOG_ERROR` | `4` | Failures requiring attention |
+| `MLOG_NONE` | `5` | Filter only, never a message level |
+
+## Output Format
+
+Typical output:
+
+```text
+12.345 [I] MQTT: Connected
+[E] CONF: CRC failed
 ```
-[timestamp] [level] tag: message\n
 
-Examples:
-12.345 [I] MQTT: Connected to broker.local:1883
-12.350 [W] SENS: Temperature out of range: 85.3
-[E] CONF: CRC failed (no timestamp if clock is NULL)
+Rules:
+
+- Each emitted record ends in `\n`.
+- If color is enabled for a backend and a color prefix is emitted, the ANSI reset sequence is emitted before the newline.
+- Truncation preserves the terminating NUL and the final newline.
+- Timestamp text is sampled once per log event and reused for every interested backend.
+
+## Callbacks and Ownership
+
+```c
+typedef uint32_t (*mlog_clock_fn)(void);
+typedef void (*mlog_write_fn)(const char *buf, uint16_t len, mlog_level_t level, void *ctx);
 ```
 
----
+- `mlog_clock_fn` defines wraparound, epoch, and monotonicity.
+- `mlog_write_fn` is synchronous.
+- `buf` is borrowed stack storage valid only during the callback.
+- `ctx` is borrowed caller-owned context.
+- microlog does not propagate backend write failures.
 
-## Backend
-
-### mlog_backend_t
+## Public Types
 
 ```c
 typedef struct {
-    mlog_write_fn  write;   /* output callback (required) */
-    void          *ctx;     /* user context */
-    mlog_level_t   level;   /* runtime minimum level */
-    bool           color;   /* ANSI color (if MLOG_ENABLE_COLOR) */
+    mlog_write_fn  write;
+    void          *ctx;
+    mlog_level_t   level;
+    bool           color;
 } mlog_backend_t;
 ```
 
-### mlog_write_fn
+`mlog_backend_t` is copied by value into the logger. The `ctx` pointer must remain valid until the backend is cleared or the logger is no longer used.
 
 ```c
-typedef void (*mlog_write_fn)(const char *buf, uint16_t len,
-                               mlog_level_t level, void *ctx);
+typedef struct {
+    mlog_backend_t  backends[MLOG_MAX_BACKENDS];
+    uint8_t         num_backends;
+    mlog_level_t    global_level;
+    mlog_clock_fn   clock;
+} mlog_t;
 ```
 
-Receives a complete, formatted, NUL-terminated log line including newline.
-`level` is provided for backends that need level-specific routing (e.g.,
-writing errors to a separate file).
+## Functions
 
----
+`mlog_t *mlog_global(void);`
 
-## Init / config
+- Returns the static global logger.
+- Static zero initialization is the default state.
 
-### mlog_init
+`void mlog_init(mlog_t *log);`
+
+- Clears backends.
+- Sets global level to `MLOG_TRACE`.
+- Clears the clock callback.
+
+`void mlog_set_clock(mlog_t *log, mlog_clock_fn clock);`
+
+- Assigns the clock callback.
+- `NULL` disables timestamps.
+
+`void mlog_set_level(mlog_t *log, mlog_level_t level);`
+
+- Sets the runtime global filter.
+- Invalid values are ignored.
+
+`int mlog_add_backend(mlog_t *log, const mlog_backend_t *backend);`
+
+- Copies the backend descriptor by value.
+- Returns the backend index or `-1`.
+- Rejects invalid levels and missing callbacks.
+
+`void mlog_clear_backends(mlog_t *log);`
+
+- Clears backend slots.
+
+`void mlog_backend_set_level(mlog_t *log, uint8_t index, mlog_level_t level);`
+
+- Updates one backend filter.
+- Invalid levels are ignored.
+
+`void mlog_log(mlog_t *log, mlog_level_t level, const char *tag, const char *fmt, ...);`
+
+- Logs one record.
+- Accepts only `TRACE` through `ERROR` as message levels.
+- Ignores invalid levels and `MLOG_NONE`.
+
+`void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag, const char *fmt, va_list args);`
+
+- `va_list` form of `mlog_log`.
+
+`void mlog_hexdump(mlog_t *log, mlog_level_t level, const char *tag, const void *data, uint16_t len);`
+
+- Dumps bytes in source order, for example `00 0A FF 42`.
+- Uses `const unsigned char *` for byte-wise access.
+
+## Macros
 
 ```c
-void mlog_init(mlog_t *log);
+MLOG_TRACE(...)
+MLOG_DEBUG(...)
+MLOG_INFO(...)
+MLOG_WARN(...)
+MLOG_ERROR(...)
+MLOG_LOG(logger, level, ...)
 ```
 
-Clear all backends, set global level to TRACE, clock to NULL.
+- Active macros evaluate each argument exactly once.
+- Compile-time-disabled macros evaluate none of their arguments.
+- The macros are safe in ordinary statement contexts such as `if/else`.
 
-### mlog_global
+## Limits
 
-```c
-mlog_t *mlog_global(void);
+- No internal locking.
+- Not safe for recursive backend logging.
+- Not ISR-safe, async-signal-safe, durable, or reset-safe.
+- Stack usage in `mlog_vlog` is bounded by:
+
+```text
+sizeof(msg_buf) + sizeof(line_buf) + small fixed locals
+= MLOG_BUF_SIZE + (MLOG_BUF_SIZE + MLOG_LINE_OVERHEAD) + O(1)
 ```
-
-Returns the global singleton. Lazy-initialised on first call.
-
-### mlog_set_clock
-
-```c
-void mlog_set_clock(mlog_t *log, mlog_clock_fn clock);
-```
-
-Set clock for timestamps. Pass NULL to disable. Same signature as
-`mres_clock_fn`: `uint32_t (*)(void)` returning milliseconds.
-
-### mlog_set_level
-
-```c
-void mlog_set_level(mlog_t *log, mlog_level_t level);
-```
-
-Set runtime global filter. Messages below this are suppressed regardless
-of backend levels. Pass NULL for log to use global.
-
-### mlog_add_backend
-
-```c
-int mlog_add_backend(mlog_t *log, const mlog_backend_t *backend);
-```
-
-Register a backend. Returns index (0-based) or -1 if full or invalid.
-
-### mlog_clear_backends
-
-```c
-void mlog_clear_backends(mlog_t *log);
-```
-
-Remove all backends.
-
-### mlog_backend_set_level
-
-```c
-void mlog_backend_set_level(mlog_t *log, uint8_t index, mlog_level_t level);
-```
-
-Change a backend's runtime level.
-
----
-
-## Logging functions
-
-### mlog_log
-
-```c
-void mlog_log(mlog_t *log, mlog_level_t level, const char *tag,
-              const char *fmt, ...);
-```
-
-Log a printf-style message. Pass NULL for `log` to use global. Pass NULL
-for `tag` to omit.
-
-### mlog_vlog
-
-```c
-void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
-               const char *fmt, va_list args);
-```
-
-va_list variant for wrapping in other variadic functions.
-
-### mlog_hexdump
-
-```c
-void mlog_hexdump(mlog_t *log, mlog_level_t level, const char *tag,
-                   const void *data, uint16_t len);
-```
-
-Log binary data as hex: `"00 0A FF 42"`.
-
----
-
-## Convenience macros
-
-```c
-MLOG_TRACE(tag, fmt, ...)
-MLOG_DEBUG(tag, fmt, ...)
-MLOG_INFO(tag, fmt, ...)
-MLOG_WARN(tag, fmt, ...)
-MLOG_ERROR(tag, fmt, ...)
-```
-
-Use the global logger. Compile-time stripped when below `MLOG_LEVEL_MIN`.
-
----
-
-## Utility functions
-
-```c
-const char *mlog_level_name(mlog_level_t level);   /* "ERROR" */
-char mlog_level_char(mlog_level_t level);           /* 'E' */
-```
-
----
-
-## Thread safety
-
-microlog is not thread-safe. If logging from multiple threads/tasks,
-protect `mlog_log()` with a mutex, or use a thread-safe backend (e.g.,
-write to a lock-free ring buffer, drain from one thread).
