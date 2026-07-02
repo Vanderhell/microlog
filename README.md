@@ -100,6 +100,14 @@ cmake --install build --prefix install
 - [Changelog](CHANGELOG.md)
 - [Release Workflow](.github/workflows/release.yml)
 
+Recommended reading order for new consumers:
+
+1. `README.md`
+2. `docs/COOKBOOK.md`
+3. `docs/API_REFERENCE.md`
+4. `docs/TROUBLESHOOTING.md`
+5. `docs/VERIFICATION.md`
+
 Releases are tag-based. Branch pushes do not create releases; only pushed `v*` tags trigger [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 ## License

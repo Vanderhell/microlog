@@ -1,5 +1,7 @@
 # Cookbook
 
+All examples assume producer and consumer use identical ABI-affecting configuration values from `mlog.h`.
+
 ## 1. Minimal global logger setup
 
 ```c
@@ -91,6 +93,8 @@ Callbacks must copy the provided buffer before queuing DMA, deferring work, or r
 find_package(microlog CONFIG REQUIRED)
 target_link_libraries(app PRIVATE microlog::microlog)
 ```
+
+When consuming an installed package, do not override exported ABI-affecting definitions inconsistently in downstream targets.
 
 ## 15. C++ consumer
 
