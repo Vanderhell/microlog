@@ -20,6 +20,12 @@ extern "C" {
 #include <stdarg.h>
 #include <limits.h>
 
+#if defined(__clang__) || defined(__GNUC__)
+#define MLOG_PRINTF_LIKE(fmt_index, first_arg) __attribute__((format(printf, fmt_index, first_arg)))
+#else
+#define MLOG_PRINTF_LIKE(fmt_index, first_arg)
+#endif
+
 /* ── Configuration ─────────────────────────────────────────────────────── */
 
 /** Maximum number of backends that can be registered simultaneously. */
@@ -123,9 +129,7 @@ typedef struct {
     mlog_write_fn  write;     /**< Output callback (required).           */
     void          *ctx;       /**< User context passed to write.         */
     mlog_level_t   level;     /**< Runtime minimum level for this backend.*/
-#if MLOG_ENABLE_COLOR
     bool           color;     /**< Enable ANSI color codes.              */
-#endif
 } mlog_backend_t;
 
 /* ── Logger instance ───────────────────────────────────────────────────── */
@@ -195,11 +199,11 @@ void mlog_backend_set_level(mlog_t *log, uint8_t index, mlog_level_t level);
  * @param ...    Format arguments.
  */
 void mlog_log(mlog_t *log, mlog_level_t level, const char *tag,
-              const char *fmt, ...);
+              const char *fmt, ...) MLOG_PRINTF_LIKE(4, 5);
 
 /** va_list variant of mlog_log. */
 void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
-               const char *fmt, va_list args);
+               const char *fmt, va_list args) MLOG_PRINTF_LIKE(4, 0);
 
 /* ── Convenience macros (use global logger) ────────────────────────────── */
 
@@ -215,44 +219,44 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
  */
 
 #if MLOG_LEVEL_MIN <= 0
-#define MLOG_TRACE(tag, fmt, ...) \
-    mlog_log(NULL, MLOG_TRACE, tag, fmt, ##__VA_ARGS__)
+#define MLOG_TRACE(...) \
+    mlog_log(NULL, MLOG_TRACE, __VA_ARGS__)
 #else
 #define MLOG_TRACE(tag, fmt, ...) ((void)0)
 #endif
 
 #if MLOG_LEVEL_MIN <= 1
-#define MLOG_DEBUG(tag, fmt, ...) \
-    mlog_log(NULL, MLOG_DEBUG, tag, fmt, ##__VA_ARGS__)
+#define MLOG_DEBUG(...) \
+    mlog_log(NULL, MLOG_DEBUG, __VA_ARGS__)
 #else
 #define MLOG_DEBUG(tag, fmt, ...) ((void)0)
 #endif
 
 #if MLOG_LEVEL_MIN <= 2
-#define MLOG_INFO(tag, fmt, ...) \
-    mlog_log(NULL, MLOG_INFO, tag, fmt, ##__VA_ARGS__)
+#define MLOG_INFO(...) \
+    mlog_log(NULL, MLOG_INFO, __VA_ARGS__)
 #else
 #define MLOG_INFO(tag, fmt, ...) ((void)0)
 #endif
 
 #if MLOG_LEVEL_MIN <= 3
-#define MLOG_WARN(tag, fmt, ...) \
-    mlog_log(NULL, MLOG_WARN, tag, fmt, ##__VA_ARGS__)
+#define MLOG_WARN(...) \
+    mlog_log(NULL, MLOG_WARN, __VA_ARGS__)
 #else
 #define MLOG_WARN(tag, fmt, ...) ((void)0)
 #endif
 
 #if MLOG_LEVEL_MIN <= 4
-#define MLOG_ERROR(tag, fmt, ...) \
-    mlog_log(NULL, MLOG_ERROR, tag, fmt, ##__VA_ARGS__)
+#define MLOG_ERROR(...) \
+    mlog_log(NULL, MLOG_ERROR, __VA_ARGS__)
 #else
 #define MLOG_ERROR(tag, fmt, ...) ((void)0)
 #endif
 
 /* ── Instance-specific macros ──────────────────────────────────────────── */
 
-#define MLOG_LOG(logger, level, tag, fmt, ...) \
-    mlog_log((logger), (level), (tag), fmt, ##__VA_ARGS__)
+#define MLOG_LOG(logger, level, ...) \
+    mlog_log((logger), (level), __VA_ARGS__)
 
 /* ── Hex dump utility ──────────────────────────────────────────────────── */
 

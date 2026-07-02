@@ -234,15 +234,12 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
         size_t suffix_reserve;
         size_t tag_limit;
         size_t tag_len;
-#if MLOG_ENABLE_COLOR
-        int emit_color = (be->color != false);
-#else
         int emit_color = 0;
-#endif
 
         mlog_writer_init(&writer, line_buf, sizeof(line_buf));
         suffix_reserve = 1u;
 #if MLOG_ENABLE_COLOR
+        emit_color = (be->color != false);
         if (emit_color) {
             suffix_reserve += strlen(COLOR_RESET);
         }
