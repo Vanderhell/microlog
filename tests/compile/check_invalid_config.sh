@@ -7,10 +7,11 @@ CFLAGS_STR=${CFLAGS:-"-std=c99 -Wall -Wextra -Wpedantic -Werror -I../include"}
 run_case() {
     file="$1"
     pattern="$2"
-    object="${file}.o"
+    source_file="$script_dir/$file"
+    object_file="$script_dir/${file}.o"
 
     set +e
-    output=$($CC_CMD $CFLAGS_STR -c "$file" -o "$object" 2>&1)
+    output=$($CC_CMD $CFLAGS_STR -c "$source_file" -o "$object_file" 2>&1)
     status=$?
     set -e
 
@@ -27,7 +28,6 @@ run_case() {
 }
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-cd "$script_dir"
 
 run_case "invalid_config_max_backends_zero.c" "MLOG_MAX_BACKENDS"
 run_case "invalid_config_buf_size_zero.c" "MLOG_BUF_SIZE"
