@@ -1,6 +1,8 @@
 # Porting Guide
 
-microlog needs `mlog.h`, `mlog.c`, and a C99 compiler with `vsnprintf`.
+microlog needs `mlog.h`, `mlog.c`, and a C99 compiler with the C library
+facilities used by the implementation: `vsnprintf`, `snprintf`, `memcpy`,
+`memset`, and `strlen`.
 
 ---
 
@@ -50,7 +52,7 @@ static void rtt_write(const char *buf, uint16_t len,
 mlog_backend_t rtt = { .write = rtt_write, .level = MLOG_TRACE, .color = true };
 ```
 
-### Ring buffer (post-mortem)
+### Ring buffer (volatile diagnostics)
 
 ```c
 #define LOG_RING_SIZE 2048

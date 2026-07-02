@@ -132,14 +132,9 @@ char mlog_level_char(mlog_level_t level)
 /* ── Global logger singleton ───────────────────────────────────────────── */
 
 static mlog_t g_logger;
-static bool g_initialized = false;
 
 mlog_t *mlog_global(void)
 {
-    if (!g_initialized) {
-        mlog_init(&g_logger);
-        g_initialized = true;
-    }
     return &g_logger;
 }
 
@@ -216,6 +211,16 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
     }
     if (!any_interested) return;
 
+    /* Sample the clock once so every interested backend sees the same event time. */
+#if MLOG_ENABLE_TIMESTAMP
+    uint32_t event_time = 0;
+    int have_event_time = 0;
+    if (log->clock != NULL) {
+        event_time = log->clock();
+        have_event_time = 1;
+    }
+#endif
+
     /* Format the user message */
     char msg_buf[MLOG_BUF_SIZE];
     int msg_len = vsnprintf(msg_buf, sizeof(msg_buf), fmt, args);
@@ -255,10 +260,9 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
 
         /* Timestamp */
 #if MLOG_ENABLE_TIMESTAMP
-        if (log->clock != NULL) {
-            uint32_t ms = log->clock();
-            uint32_t sec = ms / 1000;
-            uint32_t frac = ms % 1000;
+        if (have_event_time) {
+            uint32_t sec = event_time / 1000u;
+            uint32_t frac = event_time % 1000u;
             char ts_buf[16];
             int n = snprintf(ts_buf, sizeof(ts_buf), "%lu.%03lu ",
                              (unsigned long)sec, (unsigned long)frac);

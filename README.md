@@ -7,7 +7,7 @@
 
 Structured logging for embedded systems in portable C99.
 
-Zero dependencies. Zero dynamic allocation. Pluggable backends. Predictable output.
+No third-party runtime dependencies. Zero dynamic allocation. Pluggable backends. Predictable output.
 
 ## Why microlog?
 
@@ -38,7 +38,7 @@ Example output:
 - `printf`-style formatting through `vsnprintf`
 - Hex dump helper for protocol and transport debugging
 - Global singleton and explicit logger instances
-- No heap allocations and no external dependencies
+- No heap allocations and no third-party runtime dependencies
 
 ## Repository Layout
 
@@ -166,7 +166,7 @@ Full API reference: [docs/API_REFERENCE.md](docs/API_REFERENCE.md)
 `microlog` is intended for small systems and companion firmware libraries where deterministic behavior matters. Typical integrations include:
 
 - UART or RTT console output during development
-- Ring buffers for post-mortem diagnostics
+- Ring buffers for in-memory diagnostics while power remains applied
 - Transport/protocol tracing during bring-up
 - Shared logging across small embedded support libraries
 

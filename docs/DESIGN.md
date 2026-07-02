@@ -16,7 +16,7 @@ convenience, plus the ability to create independent `mlog_t` instances.
 - The remaining 5% need isolation: test harnesses that capture output,
   library code that shouldn't touch the application's logger, or multiple
   subsystems with independent routing.
-- The global is lazy-initialised on first access. No explicit init needed.
+- The global relies on static zero initialisation. No explicit init needed.
 
 ---
 
@@ -90,10 +90,10 @@ truncated.
 
 ---
 
-## 6. vsnprintf dependency
+## 6. C library dependency
 
-**Decision:** microlog uses `vsnprintf` from the C standard library for
-printf-style formatting.
+**Decision:** microlog uses C library facilities such as `vsnprintf`,
+`snprintf`, `memcpy`, `memset`, and `strlen`.
 
 **Why:**
 
@@ -106,7 +106,7 @@ printf-style formatting.
   logging anyway.
 
 **Tradeoff accepted:** `vsnprintf` pulls in libc formatting code (~2 KB).
-For the tiniest MCUs, the user can provide a simpler formatting callback.
+For the tiniest MCUs, the user may need a different logger design.
 
 ---
 

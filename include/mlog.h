@@ -107,6 +107,11 @@ char mlog_level_char(mlog_level_t level);
  * Clock function — returns current time in milliseconds.
  * Same signature as microres/microfsm. May be NULL (timestamps disabled).
  */
+/*
+ * Sampled at most once per emitted log event and reused for every
+ * interested backend. Wraparound, epoch, and monotonicity are defined
+ * entirely by the callback.
+ */
 typedef uint32_t (*mlog_clock_fn)(void);
 
 /* ── Backend ───────────────────────────────────────────────────────────── */
@@ -119,11 +124,19 @@ typedef uint32_t (*mlog_clock_fn)(void);
  * @param level Log level of this message.
  * @param ctx   User context from mlog_backend_t.
  */
+/*
+ * Callbacks are invoked synchronously from the logging call. The buffer
+ * pointer is borrowed stack storage that remains valid only until the
+ * callback returns; copy it before any deferred or asynchronous use.
+ * Backend failures are not reported back through microlog.
+ */
 typedef void (*mlog_write_fn)(const char *buf, uint16_t len,
                                mlog_level_t level, void *ctx);
 
-/**
- * Backend descriptor.
+/*
+ * Backend descriptor copied by value into the logger. The ctx pointer is
+ * caller-owned and must remain valid until the backend is cleared or the
+ * logger is no longer used.
  */
 typedef struct {
     mlog_write_fn  write;     /**< Output callback (required).           */
@@ -134,9 +147,11 @@ typedef struct {
 
 /* ── Logger instance ───────────────────────────────────────────────────── */
 
-/**
+/*
  * Logger state. Typically one global instance per application.
  * Can also be used as multiple independent loggers.
+ * Not safe for concurrent access or recursive logging without external
+ * synchronisation and callback discipline supplied by the caller.
  */
 typedef struct {
     mlog_backend_t  backends[MLOG_MAX_BACKENDS];
@@ -147,9 +162,10 @@ typedef struct {
 
 /* ── Global logger ─────────────────────────────────────────────────────── */
 
-/**
+/*
  * Get pointer to the global logger singleton.
- * Initialised to zero (no backends, TRACE level, no clock).
+ * Static zero initialisation is the default state: no backends, TRACE
+ * global level, no clock.
  */
 mlog_t *mlog_global(void);
 
