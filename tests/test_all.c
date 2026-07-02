@@ -11,54 +11,75 @@
 
 /* ── Minimal test framework ────────────────────────────────────────────── */
 
-static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+static int tests_run = 0;
+static int tests_passed = 0;
+static int tests_failed = 0;
+static int current_test_failed = 0;
 
 #define TEST(name) static void name(void)
 #define RUN_TEST(name) do {                                     \
     tests_run++;                                                \
+    current_test_failed = 0;                                    \
     printf("  %-55s ", #name);                                  \
     name();                                                     \
-    printf("PASS\n");                                           \
-    tests_passed++;                                             \
+    if (current_test_failed) {                                  \
+        tests_failed++;                                          \
+    } else {                                                    \
+        printf("PASS\n");                                       \
+        tests_passed++;                                         \
+    }                                                           \
 } while (0)
 
 #define ASSERT_EQ(expected, actual) do {                        \
-    if ((expected) != (actual)) {                               \
+    int expected_value__ = (int)(expected);                     \
+    int actual_value__ = (int)(actual);                         \
+    if (expected_value__ != actual_value__) {                   \
+        current_test_failed = 1;                                \
         printf("FAIL\n    %s:%d: expected %d, got %d\n",       \
-               __FILE__, __LINE__, (int)(expected), (int)(actual)); \
-        tests_failed++; return;                                 \
+               __FILE__, __LINE__, expected_value__, actual_value__); \
+        return;                                                 \
     }                                                           \
 } while (0)
 
 #define ASSERT_TRUE(expr) do {                                  \
-    if (!(expr)) {                                              \
+    int value__ = !!(expr);                                     \
+    if (!value__) {                                             \
+        current_test_failed = 1;                                \
         printf("FAIL\n    %s:%d: expected true\n",              \
                __FILE__, __LINE__);                             \
-        tests_failed++; return;                                 \
+        return;                                                 \
     }                                                           \
 } while (0)
 
 #define ASSERT_FALSE(expr) do {                                 \
-    if ((expr)) {                                               \
+    int value__ = !!(expr);                                     \
+    if (value__) {                                              \
+        current_test_failed = 1;                                \
         printf("FAIL\n    %s:%d: expected false\n",             \
                __FILE__, __LINE__);                             \
-        tests_failed++; return;                                 \
+        return;                                                 \
     }                                                           \
 } while (0)
 
 #define ASSERT_STR_EQ(expected, actual) do {                    \
-    if (strcmp((expected), (actual)) != 0) {                     \
+    const char *expected_value__ = (expected);                  \
+    const char *actual_value__ = (actual);                      \
+    if (strcmp(expected_value__, actual_value__) != 0) {        \
+        current_test_failed = 1;                                \
         printf("FAIL\n    %s:%d:\n      expected: \"%s\"\n      got:      \"%s\"\n", \
-               __FILE__, __LINE__, (expected), (actual));       \
-        tests_failed++; return;                                 \
+               __FILE__, __LINE__, expected_value__, actual_value__); \
+        return;                                                 \
     }                                                           \
 } while (0)
 
 #define ASSERT_STR_CONTAINS(haystack, needle) do {              \
-    if (strstr((haystack), (needle)) == NULL) {                  \
+    const char *haystack_value__ = (haystack);                  \
+    const char *needle_value__ = (needle);                      \
+    if (strstr(haystack_value__, needle_value__) == NULL) {     \
+        current_test_failed = 1;                                \
         printf("FAIL\n    %s:%d: \"%s\" not found in \"%s\"\n", \
-               __FILE__, __LINE__, (needle), (haystack));       \
-        tests_failed++; return;                                 \
+               __FILE__, __LINE__, needle_value__, haystack_value__); \
+        return;                                                 \
     }                                                           \
 } while (0)
 
@@ -69,34 +90,38 @@ static char captured[CAPTURE_SIZE];
 static uint16_t captured_len = 0;
 static int write_count = 0;
 static mlog_level_t captured_level = MLOG_NONE;
+static void *captured_ctx = NULL;
 
 static void capture_reset(void) {
     memset(captured, 0, CAPTURE_SIZE);
     captured_len = 0;
     write_count = 0;
     captured_level = MLOG_NONE;
+    captured_ctx = NULL;
 }
 
 static void capture_write(const char *buf, uint16_t len, mlog_level_t level, void *ctx) {
-    (void)ctx;
     if (len < CAPTURE_SIZE - 1) {
         memcpy(captured, buf, len);
         captured[len] = '\0';
         captured_len = len;
     }
     captured_level = level;
+    captured_ctx = ctx;
     write_count++;
 }
 
 /* Second capture for multi-backend tests */
 static char captured2[CAPTURE_SIZE];
 static int write_count2 = 0;
+static uint16_t captured_len2 = 0;
 
 static void capture_write2(const char *buf, uint16_t len, mlog_level_t level, void *ctx) {
     (void)ctx; (void)level;
     if (len < CAPTURE_SIZE - 1) {
         memcpy(captured2, buf, len);
         captured2[len] = '\0';
+        captured_len2 = len;
     }
     write_count2++;
 }
@@ -104,6 +129,7 @@ static void capture_write2(const char *buf, uint16_t len, mlog_level_t level, vo
 static void capture2_reset(void) {
     memset(captured2, 0, CAPTURE_SIZE);
     write_count2 = 0;
+    captured_len2 = 0;
 }
 
 /* ── Mock clock ────────────────────────────────────────────────────────── */
@@ -124,6 +150,7 @@ static void setup_logger(void) {
     capture_reset();
     capture2_reset();
     mock_time = 0;
+    mock_clock_calls = 0;
     mlog_init(&test_log);
 }
 
@@ -132,13 +159,8 @@ static int add_capture_backend(mlog_level_t level, bool color) {
         .write = capture_write,
         .ctx = NULL,
         .level = level,
-#if MLOG_ENABLE_COLOR
         .color = color,
-#endif
     };
-#if !MLOG_ENABLE_COLOR
-    (void)color;
-#endif
     return mlog_add_backend(&test_log, &be);
 }
 
@@ -470,7 +492,31 @@ TEST(test_convenience_macros) {
     ASSERT_STR_CONTAINS(captured, "[E]");
     ASSERT_STR_CONTAINS(captured, "error test");
 
+    capture_reset();
+    MLOG_INFO("PLAIN", "plain message");
+    ASSERT_EQ(1, write_count);
+    ASSERT_STR_CONTAINS(captured, "PLAIN");
+    ASSERT_STR_CONTAINS(captured, "plain message");
+
     /* Cleanup global */
+    mlog_clear_backends(g);
+}
+
+TEST(test_active_macro_expressions_evaluate_once) {
+    int value = 0;
+    mlog_t *g = mlog_global();
+
+    mlog_init(g);
+    {
+        mlog_backend_t be = { .write = capture_write, .ctx = NULL, .level = MLOG_TRACE, .color = false };
+        mlog_add_backend(g, &be);
+    }
+
+    capture_reset();
+    MLOG_INFO("EVAL", "value=%d", ++value);
+    ASSERT_EQ(1, value);
+    ASSERT_EQ(1, write_count);
+
     mlog_clear_backends(g);
 }
 
@@ -502,9 +548,9 @@ TEST(test_backend_context) {
         .level = MLOG_TRACE,
     };
     mlog_add_backend(&test_log, &be);
-    /* Just verify it doesn't crash — ctx is passed through */
     mlog_log(&test_log, MLOG_INFO, "CTX", "context test");
     ASSERT_EQ(1, write_count);
+    ASSERT_TRUE(captured_ctx == &my_ctx);
 }
 
 TEST(test_set_level_null) {
@@ -599,9 +645,24 @@ TEST(test_backend_context_pointer_forwarded) {
         mlog_backend_t be = { .write = capture_write, .ctx = &marker, .level = MLOG_TRACE };
         mlog_add_backend(&test_log, &be);
         mlog_log(&test_log, MLOG_INFO, "CTX", "ctx");
+        ASSERT_TRUE(captured_ctx == &marker);
     }
 
     ASSERT_EQ(1, write_count);
+}
+
+TEST(test_invalid_message_level_negative_emits_nothing) {
+    setup_logger();
+    add_capture_backend(MLOG_TRACE, false);
+    mlog_log(&test_log, (mlog_level_t)-1, "LVL", "must be ignored");
+    ASSERT_EQ(0, write_count);
+}
+
+TEST(test_none_level_filter_suppresses_everything) {
+    setup_logger();
+    add_capture_backend(MLOG_NONE, false);
+    mlog_log(&test_log, MLOG_ERROR, "LVL", "filtered");
+    ASSERT_EQ(0, write_count);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -660,6 +721,7 @@ int main(void) {
 
     printf("\n[Convenience Macros]\n");
     RUN_TEST(test_convenience_macros);
+    RUN_TEST(test_active_macro_expressions_evaluate_once);
 
     printf("\n[Edge Cases]\n");
     RUN_TEST(test_log_with_null_logger);
@@ -671,6 +733,8 @@ int main(void) {
 #endif
     RUN_TEST(test_invalid_message_level_none_emits_nothing);
     RUN_TEST(test_invalid_message_level_out_of_range_emits_nothing);
+    RUN_TEST(test_invalid_message_level_negative_emits_nothing);
+    RUN_TEST(test_none_level_filter_suppresses_everything);
     RUN_TEST(test_timestamp_sampled_once_per_event);
     RUN_TEST(test_backend_context_pointer_forwarded);
 

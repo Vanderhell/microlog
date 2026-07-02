@@ -20,6 +20,9 @@ compile-c99:
 	$(CC) $(CFLAGS) -c $(COMPILE_DIR)/c99_macro_control_flow.c -o c99_macro_control_flow.o
 	$(CC) $(CFLAGS) -c $(COMPILE_DIR)/disabled_macro_no_eval.c -o disabled_macro_no_eval.o
 	$(CC) $(CFLAGS) -c $(COMPILE_DIR)/c99_consumer.c -o c99_consumer.o
+	$(CC) $(CFLAGS) -c $(COMPILE_DIR)/level_min_none_consumer.c -o level_min_none_consumer.o
+	$(CC) $(CFLAGS) -c $(COMPILE_DIR)/max_backends_one_consumer.c -o max_backends_one_consumer.o
+	$(CC) $(CFLAGS) -c $(COMPILE_DIR)/min_buf_size_consumer.c -o min_buf_size_consumer.o
 
 compile-c11:
 	$(CC) -std=c11 -Wall -Wextra -Wpedantic -Werror -I../include -c $(COMPILE_DIR)/c11_consumer.c -o c11_consumer.o
