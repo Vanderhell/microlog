@@ -36,7 +36,7 @@ compile-multi-tu:
 	$(CC) $(CFLAGS) $(COMPILE_DIR)/multi_tu_a.c $(COMPILE_DIR)/multi_tu_b.c $(COMPILE_DIR)/multi_tu_main.c mlog_multi.o -o multi_tu_test
 
 compile-invalid-configs:
-	powershell -ExecutionPolicy Bypass -File $(COMPILE_DIR)/check_invalid_config.ps1 -CC "$(CC)" -CFlags "$(CFLAGS)"
+	CC="$(CC)" CFLAGS="$(CFLAGS)" sh $(COMPILE_DIR)/check_invalid_config.sh
 
 clean:
 	rm -f test_all *.o cpp_consumer_test multi_tu_test
