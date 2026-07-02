@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MLOG_LINE_BUF_SIZE ((size_t)MLOG_BUF_SIZE + (size_t)MLOG_LINE_OVERHEAD)
+
 /* ── ANSI color codes ──────────────────────────────────────────────────── */
 
 #if MLOG_ENABLE_COLOR
@@ -30,15 +32,100 @@ static const char *level_names[] = {
 
 static const char level_chars[] = { 'T', 'D', 'I', 'W', 'E', '-' };
 
+typedef struct {
+    char *buf;
+    size_t len;
+    size_t cap;
+} mlog_buf_writer_t;
+
+static int mlog_level_is_filter(mlog_level_t level)
+{
+    return (unsigned int)level <= (unsigned int)MLOG_NONE;
+}
+
+static int mlog_level_is_message(mlog_level_t level)
+{
+    return (unsigned int)level <= (unsigned int)MLOG_ERROR;
+}
+
+static size_t mlog_writer_room(const mlog_buf_writer_t *writer)
+{
+    if (writer->len >= writer->cap) {
+        return 0;
+    }
+    return writer->cap - writer->len;
+}
+
+static size_t mlog_writer_room_with_reserve(const mlog_buf_writer_t *writer,
+                                            size_t reserve)
+{
+    size_t room = mlog_writer_room(writer);
+    if (room <= reserve) {
+        return 0;
+    }
+    return room - reserve;
+}
+
+static void mlog_writer_init(mlog_buf_writer_t *writer, char *buf, size_t size)
+{
+    writer->buf = buf;
+    writer->len = 0;
+    writer->cap = (size > 0) ? (size - 1u) : 0u;
+    if (size > 0) {
+        writer->buf[0] = '\0';
+    }
+}
+
+static void mlog_writer_terminate(mlog_buf_writer_t *writer)
+{
+    writer->buf[writer->len] = '\0';
+}
+
+static void mlog_writer_append_n(mlog_buf_writer_t *writer, const char *src,
+                                 size_t src_len, size_t reserve)
+{
+    size_t copy = mlog_writer_room_with_reserve(writer, reserve);
+    if (copy == 0) {
+        return;
+    }
+    if (copy > src_len) {
+        copy = src_len;
+    }
+    memcpy(writer->buf + writer->len, src, copy);
+    writer->len += copy;
+    writer->buf[writer->len] = '\0';
+}
+
+static void mlog_writer_append_cstr(mlog_buf_writer_t *writer, const char *src,
+                                    size_t reserve)
+{
+    mlog_writer_append_n(writer, src, strlen(src), reserve);
+}
+
+static void mlog_writer_append_char(mlog_buf_writer_t *writer, char c,
+                                    size_t reserve)
+{
+    mlog_writer_append_n(writer, &c, 1u, reserve);
+}
+
+static size_t mlog_bounded_cstr_len(const char *s, size_t max_len)
+{
+    size_t len = 0;
+    while (len < max_len && s[len] != '\0') {
+        len++;
+    }
+    return len;
+}
+
 const char *mlog_level_name(mlog_level_t level)
 {
-    if (level > MLOG_NONE) return "?";
+    if (!mlog_level_is_filter(level)) return "?";
     return level_names[level];
 }
 
 char mlog_level_char(mlog_level_t level)
 {
-    if (level > MLOG_NONE) return '?';
+    if (!mlog_level_is_filter(level)) return '?';
     return level_chars[level];
 }
 
@@ -76,6 +163,7 @@ void mlog_set_clock(mlog_t *log, mlog_clock_fn clock)
 void mlog_set_level(mlog_t *log, mlog_level_t level)
 {
     if (log == NULL) log = mlog_global();
+    if (!mlog_level_is_filter(level)) return;
     log->global_level = level;
 }
 
@@ -84,6 +172,7 @@ int mlog_add_backend(mlog_t *log, const mlog_backend_t *backend)
     if (log == NULL) log = mlog_global();
     if (backend == NULL || backend->write == NULL) return -1;
     if (log->num_backends >= MLOG_MAX_BACKENDS) return -1;
+    if (!mlog_level_is_filter(backend->level)) return -1;
 
     log->backends[log->num_backends] = *backend;
     return (int)log->num_backends++;
@@ -99,6 +188,7 @@ void mlog_clear_backends(mlog_t *log)
 void mlog_backend_set_level(mlog_t *log, uint8_t index, mlog_level_t level)
 {
     if (log == NULL) log = mlog_global();
+    if (!mlog_level_is_filter(level)) return;
     if (index < log->num_backends) {
         log->backends[index].level = level;
     }
@@ -111,6 +201,7 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
 {
     if (log == NULL) log = mlog_global();
     if (fmt == NULL) return;
+    if (!mlog_level_is_message(level)) return;
 
     /* Global level filter */
     if (level < log->global_level) return;
@@ -138,19 +229,30 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
         if (level < be->level) continue;
         if (be->write == NULL) continue;
 
-        char line_buf[MLOG_BUF_SIZE + 64]; /* extra room for prefix */
-        int pos = 0;
-        int remaining;
+        char line_buf[MLOG_LINE_BUF_SIZE];
+        mlog_buf_writer_t writer;
+        size_t suffix_reserve;
+        size_t tag_limit;
+        size_t tag_len;
+#if MLOG_ENABLE_COLOR
+        int emit_color = (be->color != false);
+#else
+        int emit_color = 0;
+#endif
+
+        mlog_writer_init(&writer, line_buf, sizeof(line_buf));
+        suffix_reserve = 1u;
+#if MLOG_ENABLE_COLOR
+        if (emit_color) {
+            suffix_reserve += strlen(COLOR_RESET);
+        }
+#endif
 
         /* Color prefix */
 #if MLOG_ENABLE_COLOR
-        if (be->color && level <= MLOG_ERROR) {
+        if (emit_color) {
             const char *clr = level_colors[level];
-            int clen = (int)strlen(clr);
-            if (pos + clen < (int)sizeof(line_buf)) {
-                memcpy(line_buf + pos, clr, (size_t)clen);
-                pos += clen;
-            }
+            mlog_writer_append_cstr(&writer, clr, suffix_reserve);
         }
 #endif
 
@@ -160,72 +262,49 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
             uint32_t ms = log->clock();
             uint32_t sec = ms / 1000;
             uint32_t frac = ms % 1000;
-            remaining = (int)sizeof(line_buf) - pos;
-            if (remaining > 0) {
-                int n = snprintf(line_buf + pos, (size_t)remaining,
-                                 "%lu.%03lu ", (unsigned long)sec,
-                                 (unsigned long)frac);
-                if (n > 0) pos += (n < remaining) ? n : remaining - 1;
+            char ts_buf[16];
+            int n = snprintf(ts_buf, sizeof(ts_buf), "%lu.%03lu ",
+                             (unsigned long)sec, (unsigned long)frac);
+            if (n > 0) {
+                size_t ts_len = (size_t)n;
+                if (ts_len >= sizeof(ts_buf)) {
+                    ts_len = sizeof(ts_buf) - 1u;
+                }
+                mlog_writer_append_n(&writer, ts_buf, ts_len, suffix_reserve);
             }
         }
 #endif
 
         /* Level char */
-        remaining = (int)sizeof(line_buf) - pos;
-        if (remaining > 3) {
-            line_buf[pos++] = '[';
-            line_buf[pos++] = mlog_level_char(level);
-            line_buf[pos++] = ']';
-        }
+        mlog_writer_append_char(&writer, '[', suffix_reserve);
+        mlog_writer_append_char(&writer, mlog_level_char(level), suffix_reserve);
+        mlog_writer_append_char(&writer, ']', suffix_reserve);
 
         /* Tag */
         if (tag != NULL && tag[0] != '\0') {
-            remaining = (int)sizeof(line_buf) - pos;
-            if (remaining > 1) {
-                line_buf[pos++] = ' ';
-                int tlen = (int)strlen(tag);
-                if (tlen > remaining - 1) tlen = remaining - 1;
-                memcpy(line_buf + pos, tag, (size_t)tlen);
-                pos += tlen;
-            }
+            mlog_writer_append_char(&writer, ' ', suffix_reserve);
+            tag_limit = mlog_writer_room_with_reserve(&writer, suffix_reserve);
+            tag_len = mlog_bounded_cstr_len(tag, tag_limit);
+            mlog_writer_append_n(&writer, tag, tag_len, suffix_reserve);
         }
 
         /* Separator + message */
-        remaining = (int)sizeof(line_buf) - pos;
-        if (remaining > 2) {
-            line_buf[pos++] = ':';
-            line_buf[pos++] = ' ';
-        }
-
-        remaining = (int)sizeof(line_buf) - pos;
-        if (remaining > 1) {
-            int copy = msg_len;
-            if (copy > remaining - 1) copy = remaining - 1;
-            memcpy(line_buf + pos, msg_buf, (size_t)copy);
-            pos += copy;
-        }
+        mlog_writer_append_char(&writer, ':', suffix_reserve);
+        mlog_writer_append_char(&writer, ' ', suffix_reserve);
+        mlog_writer_append_n(&writer, msg_buf, (size_t)msg_len, suffix_reserve);
 
         /* Color reset */
 #if MLOG_ENABLE_COLOR
-        if (be->color) {
-            remaining = (int)sizeof(line_buf) - pos;
-            int rlen = (int)strlen(COLOR_RESET);
-            if (remaining > rlen) {
-                memcpy(line_buf + pos, COLOR_RESET, (size_t)rlen);
-                pos += rlen;
-            }
+        if (emit_color) {
+            mlog_writer_append_cstr(&writer, COLOR_RESET, 1u);
         }
 #endif
 
         /* Newline */
-        remaining = (int)sizeof(line_buf) - pos;
-        if (remaining > 1) {
-            line_buf[pos++] = '\n';
-        }
+        mlog_writer_append_char(&writer, '\n', 0u);
+        mlog_writer_terminate(&writer);
 
-        line_buf[pos] = '\0';
-
-        be->write(line_buf, (uint16_t)pos, level, be->ctx);
+        be->write(line_buf, (uint16_t)writer.len, level, be->ctx);
     }
 }
 
@@ -245,7 +324,7 @@ void mlog_hexdump(mlog_t *log, mlog_level_t level, const char *tag,
 {
     if (data == NULL || len == 0) return;
 
-    const uint8_t *p = (const uint8_t *)data;
+    const unsigned char *p = (const unsigned char *)data;
     char hex_buf[MLOG_BUF_SIZE];
     int pos = 0;
 

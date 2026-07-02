@@ -18,6 +18,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdarg.h>
+#include <limits.h>
 
 /* ── Configuration ─────────────────────────────────────────────────────── */
 
@@ -49,6 +50,32 @@ extern "C" {
 /** Enable timestamps in output. Requires a clock callback. */
 #ifndef MLOG_ENABLE_TIMESTAMP
 #define MLOG_ENABLE_TIMESTAMP 1
+#endif
+
+#define MLOG_LINE_OVERHEAD 32u
+
+#if MLOG_MAX_BACKENDS < 1 || MLOG_MAX_BACKENDS > 255
+#error "MLOG_MAX_BACKENDS must be an integer constant in the range 1..255."
+#endif
+
+#if MLOG_BUF_SIZE < 2
+#error "MLOG_BUF_SIZE must be at least 2 bytes."
+#endif
+
+#if ((unsigned long)MLOG_BUF_SIZE + (unsigned long)MLOG_LINE_OVERHEAD) > 65535ul
+#error "MLOG_BUF_SIZE is too large: maximum emitted line length must fit in uint16_t."
+#endif
+
+#if MLOG_LEVEL_MIN < 0 || MLOG_LEVEL_MIN > 5
+#error "MLOG_LEVEL_MIN must be an integer constant in the range 0..5."
+#endif
+
+#if MLOG_ENABLE_COLOR != 0 && MLOG_ENABLE_COLOR != 1
+#error "MLOG_ENABLE_COLOR must be exactly 0 or 1."
+#endif
+
+#if MLOG_ENABLE_TIMESTAMP != 0 && MLOG_ENABLE_TIMESTAMP != 1
+#error "MLOG_ENABLE_TIMESTAMP must be exactly 0 or 1."
 #endif
 
 /* ── Log levels ────────────────────────────────────────────────────────── */
