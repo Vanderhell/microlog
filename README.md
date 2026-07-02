@@ -98,8 +98,9 @@ cmake --install build --prefix install
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Changelog](CHANGELOG.md)
+- [Release Workflow](.github/workflows/release.yml)
 
-Releases are tag-based. See the changelog and release workflow for release policy.
+Releases are tag-based. Branch pushes do not create releases; only pushed `v*` tags trigger [`.github/workflows/release.yml`](.github/workflows/release.yml).
 
 ## License
 
