@@ -68,7 +68,7 @@ extern "C" {
 #error "MLOG_BUF_SIZE must be at least 2 bytes."
 #endif
 
-#if ((unsigned long)MLOG_BUF_SIZE + (unsigned long)MLOG_LINE_OVERHEAD) > 65535ul
+#if MLOG_BUF_SIZE > (65535u - MLOG_LINE_OVERHEAD)
 #error "MLOG_BUF_SIZE is too large: maximum emitted line length must fit in uint16_t."
 #endif
 
