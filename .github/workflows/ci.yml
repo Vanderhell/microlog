@@ -8,13 +8,124 @@ on:
   pull_request:
 
 jobs:
-  test:
+  linux-strict:
+    name: ${{ matrix.compiler }} ${{ matrix.standard }}
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cxx: g++
+            standard: c99
+          - compiler: gcc
+            cxx: g++
+            standard: c11
+          - compiler: clang
+            cxx: clang++
+            standard: c99
+          - compiler: clang
+            cxx: clang++
+            standard: c11
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Build and run strict test suite
+        run: >
+          ${{ matrix.compiler }}
+          -std=${{ matrix.standard }}
+          -Wall -Wextra -Wpedantic -Werror
+          -Wconversion -Wshadow -Wstrict-prototypes -Wmissing-prototypes
+          -Iinclude src/mlog.c tests/test_all.c -o test_all
+      - name: Run strict test suite
+        run: ./test_all
+      - name: Compile fixtures
+        run: make -C tests CC=${{ matrix.compiler }} CXX=${{ matrix.cxx }} compile-checks
 
-      - name: Build and run tests
-        working-directory: tests
-        run: make
+  sanitizers:
+    name: ${{ matrix.compiler }} sanitizers
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+          - compiler: clang
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build sanitized suite
+        run: >
+          ${{ matrix.compiler }}
+          -std=c11
+          -Wall -Wextra -Wpedantic -Werror
+          -fsanitize=address,undefined
+          -fno-omit-frame-pointer
+          -Iinclude src/mlog.c tests/test_all.c -o test_all_san
+      - name: Run sanitized suite
+        run: ./test_all_san
+
+  package-consumers:
+    name: install and consumers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure microlog
+        run: cmake -S . -B build -DMICROLOG_BUILD_TESTS=ON
+      - name: Build microlog
+        run: cmake --build build
+      - name: Run CTest
+        run: ctest --test-dir build --output-on-failure
+      - name: Install microlog
+        run: cmake --install build --prefix "$PWD/install"
+      - name: Configure C consumer
+        run: cmake -S tests/cmake/consumer -B build-consumer -DCMAKE_PREFIX_PATH="$PWD/install"
+      - name: Build C consumer
+        run: cmake --build build-consumer
+      - name: Run C consumer
+        run: ./build-consumer/microlog_consumer_c
+      - name: Configure C++ consumer
+        run: cmake -S tests/cmake/consumer_cpp -B build-consumer-cpp -DCMAKE_PREFIX_PATH="$PWD/install"
+      - name: Build C++ consumer
+        run: cmake --build build-consumer-cpp
+      - name: Run C++ consumer
+        run: ./build-consumer-cpp/microlog_consumer_cpp
+
+  msvc:
+    name: msvc
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DMICROLOG_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  static-analysis:
+    name: static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install analysis tools
+        run: sudo apt-get update && sudo apt-get install -y clang-tidy cppcheck
+      - name: clang-tidy
+        run: clang-tidy src/mlog.c -- -std=c11 -Iinclude
+      - name: cppcheck
+        run: cppcheck --enable=warning,style,performance,portability --error-exitcode=1 include src tests
+      - name: gcc fanalyzer
+        run: gcc -std=c11 -Wall -Wextra -Wpedantic -Werror -fanalyzer -Iinclude -c src/mlog.c -o mlog_fanalyzer.o
+
+  embedded-cross:
+    name: arm-none-eabi compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi
+      - name: Cross compile object
+        run: >
+          arm-none-eabi-gcc
+          -mcpu=cortex-m3 -mthumb
+          -std=c99
+          -Wall -Wextra -Wpedantic -Werror
+          -Iinclude -c src/mlog.c -o mlog_arm.o
