@@ -239,20 +239,17 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
         size_t suffix_reserve;
         size_t tag_limit;
         size_t tag_len;
-        int emit_color = 0;
-
         mlog_writer_init(&writer, line_buf, sizeof(line_buf));
         suffix_reserve = 1u;
 #if MLOG_ENABLE_COLOR
-        emit_color = (be->color != false);
-        if (emit_color) {
+        if (be->color != false) {
             suffix_reserve += strlen(COLOR_RESET);
         }
 #endif
 
         /* Color prefix */
 #if MLOG_ENABLE_COLOR
-        if (emit_color) {
+        if (be->color != false) {
             const char *clr = level_colors[level];
             mlog_writer_append_cstr(&writer, clr, suffix_reserve);
         }
@@ -296,7 +293,7 @@ void mlog_vlog(mlog_t *log, mlog_level_t level, const char *tag,
 
         /* Color reset */
 #if MLOG_ENABLE_COLOR
-        if (emit_color) {
+        if (suffix_reserve > 1u) {
             mlog_writer_append_cstr(&writer, COLOR_RESET, 1u);
         }
 #endif

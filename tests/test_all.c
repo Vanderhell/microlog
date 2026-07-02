@@ -181,8 +181,8 @@ TEST(test_init_null) {
 }
 
 TEST(test_global_singleton) {
-    mlog_t *g1 = mlog_global();
-    mlog_t *g2 = mlog_global();
+    const mlog_t *g1 = mlog_global();
+    const mlog_t *g2 = mlog_global();
     ASSERT_TRUE(g1 == g2);
     ASSERT_TRUE(g1 != NULL);
 }
