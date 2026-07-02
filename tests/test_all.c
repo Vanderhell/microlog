@@ -110,6 +110,11 @@ static void capture2_reset(void) {
 
 static uint32_t mock_time = 0;
 static uint32_t mock_clock(void) { return mock_time; }
+static int mock_clock_calls = 0;
+static uint32_t counting_clock(void) {
+    mock_clock_calls++;
+    return mock_time;
+}
 
 /* ── Helper to create a fresh logger ───────────────────────────────────── */
 
@@ -511,6 +516,94 @@ TEST(test_set_level_null) {
     mlog_set_level(NULL, MLOG_TRACE);
 }
 
+/* Regression coverage added before implementation fixes. */
+
+TEST(test_long_tag_boundary_color_disabled_keeps_newline) {
+    setup_logger();
+    add_capture_backend(MLOG_TRACE, false);
+
+    {
+        char tag[256];
+        memset(tag, 'A', sizeof(tag) - 1);
+        tag[sizeof(tag) - 1] = '\0';
+
+        mlog_log(&test_log, MLOG_INFO, tag, "msg");
+    }
+
+    ASSERT_TRUE(captured_len > 0);
+    ASSERT_EQ('\n', captured[captured_len - 1]);
+    ASSERT_EQ('\0', captured[captured_len]);
+}
+
+#if MLOG_ENABLE_COLOR
+TEST(test_long_tag_boundary_color_enabled_keeps_reset_and_newline) {
+    setup_logger();
+    add_capture_backend(MLOG_TRACE, true);
+
+    {
+        char tag[256];
+        memset(tag, 'B', sizeof(tag) - 1);
+        tag[sizeof(tag) - 1] = '\0';
+
+        mlog_log(&test_log, MLOG_ERROR, tag, "msg");
+    }
+
+    ASSERT_TRUE(captured_len > 0);
+    ASSERT_STR_CONTAINS(captured, "\033[31m");
+    ASSERT_STR_CONTAINS(captured, "\033[0m");
+    ASSERT_EQ('\n', captured[captured_len - 1]);
+    ASSERT_EQ('\0', captured[captured_len]);
+}
+#endif
+
+TEST(test_invalid_message_level_none_emits_nothing) {
+    setup_logger();
+    add_capture_backend(MLOG_TRACE, false);
+    mlog_log(&test_log, MLOG_NONE, "LVL", "must be ignored");
+    ASSERT_EQ(0, write_count);
+}
+
+TEST(test_invalid_message_level_out_of_range_emits_nothing) {
+    setup_logger();
+    add_capture_backend(MLOG_TRACE, false);
+    mlog_log(&test_log, (mlog_level_t)99, "LVL", "must be ignored");
+    ASSERT_EQ(0, write_count);
+}
+
+TEST(test_timestamp_sampled_once_per_event) {
+    setup_logger();
+    mock_clock_calls = 0;
+    mock_time = 4242;
+    mlog_set_clock(&test_log, counting_clock);
+    add_capture_backend(MLOG_TRACE, false);
+
+    {
+        mlog_backend_t be = { .write = capture_write2, .ctx = NULL, .level = MLOG_TRACE };
+        mlog_add_backend(&test_log, &be);
+    }
+
+    mlog_log(&test_log, MLOG_INFO, "TS", "shared");
+
+    ASSERT_EQ(1, mock_clock_calls);
+    ASSERT_EQ(1, write_count);
+    ASSERT_EQ(1, write_count2);
+    ASSERT_STR_CONTAINS(captured, "4.242");
+    ASSERT_STR_CONTAINS(captured2, "4.242");
+}
+
+TEST(test_backend_context_pointer_forwarded) {
+    setup_logger();
+
+    {
+        int marker = 123;
+        mlog_backend_t be = { .write = capture_write, .ctx = &marker, .level = MLOG_TRACE };
+        mlog_add_backend(&test_log, &be);
+        mlog_log(&test_log, MLOG_INFO, "CTX", "ctx");
+    }
+
+    ASSERT_EQ(1, write_count);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Main
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -572,6 +665,14 @@ int main(void) {
     RUN_TEST(test_log_with_null_logger);
     RUN_TEST(test_backend_context);
     RUN_TEST(test_set_level_null);
+    RUN_TEST(test_long_tag_boundary_color_disabled_keeps_newline);
+#if MLOG_ENABLE_COLOR
+    RUN_TEST(test_long_tag_boundary_color_enabled_keeps_reset_and_newline);
+#endif
+    RUN_TEST(test_invalid_message_level_none_emits_nothing);
+    RUN_TEST(test_invalid_message_level_out_of_range_emits_nothing);
+    RUN_TEST(test_timestamp_sampled_once_per_event);
+    RUN_TEST(test_backend_context_pointer_forwarded);
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
