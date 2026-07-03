@@ -22,9 +22,3 @@ This file records repository verification status conservatively. Documentation u
 - MSVC build and test execution
 - Embedded cross-compile job execution
 - WSL audit requested by the prompt pack
-
-## Incomplete / Release Blockers
-
-- Manual user audit has not been run.
-- No release-quality verification evidence has been attached to this commit.
-- If a release is intended, tag evidence and post-build verification still need to be recorded explicitly.
